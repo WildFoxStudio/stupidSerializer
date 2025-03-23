@@ -41,6 +41,7 @@
 #include <utility>
 #include <functional>
 #include <cassert>
+#include <string>
 
 namespace Fox
 {
@@ -163,7 +164,7 @@ namespace Fox
 					archive.set(_name, ref);
 				}
 				else
-					if constexpr (is_std_vector<T>::value)
+					if constexpr (utils::is_std_vector<T>::value)
 					{
 						using elementType = typename T::value_type;
 						static_assert((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>));
@@ -225,7 +226,7 @@ namespace Fox
 					archive.get(_name, ref);
 				}
 				else
-					if constexpr (is_std_vector<T>::value)
+					if constexpr (utils::is_std_vector<T>::value)
 					{
 						using elementType = typename T::value_type;
 						static_assert((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>));
