@@ -18,6 +18,7 @@ target_include_directories(stupidSerializer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/i
 
 # Optionally set the C++ standard (e.g., C20)
 set_target_properties(stupidSerializer PROPERTIES
+    LINKER_LANGUAGE CXX
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
 )
