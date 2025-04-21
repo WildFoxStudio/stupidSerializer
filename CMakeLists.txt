@@ -7,6 +7,7 @@ project(stupidSerializer)
 # Set the library source files
 set(SOURCES
     include/stupidSerializer.h
+    include/stupidSerializer.cpp
 )
 
 # Add the library target
