@@ -37,13 +37,14 @@
 
 #include <cassert>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include <string_view>
 
 namespace Fox
 {
@@ -66,6 +67,12 @@ using meta_list = std::vector<metaptr<Archive_T>>;
 
 namespace utils
 {
+
+template<typename T>
+struct always_false : std::false_type
+{
+};
+
 /**
  * /brief Check that reflect() returns a list of reflectable elements.
  */
@@ -163,6 +170,9 @@ struct meta
 template<typename T, typename Archive_T>
 struct CWrap : public IWrap<Archive_T>
 {
+    static_assert(std::is_same<T, typename std::decay<T>::type>::value, "Must not be reference, array, or function type");
+    static_assert(!std::is_pointer<T>::value, "Must not be pointer");
+
     const std::string _name;
     T* const          _t;
     CWrap(std::string name, T* const t) : _name(name), _t(t) { assert(_t); };
@@ -183,7 +193,7 @@ struct CWrap : public IWrap<Archive_T>
 
                 archive.set(_name, k);
             }
-        else if constexpr (std::is_trivial<T>::value || utils::Archivable<T, Archive_T>)
+        else if constexpr ((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>)&&!utils::is_std_vector<T>::value)
             {
                 const auto& ref{ *_t };
                 archive.set(_name, ref);
@@ -191,20 +201,25 @@ struct CWrap : public IWrap<Archive_T>
         else if constexpr (utils::is_std_vector<T>::value)
             {
                 using elementType = typename T::value_type;
-                static_assert((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>));
 
-                const std::vector<elementType>& vec{ *_t };
+                // static_assert(
+                //     !std::is_trivial<elementType>::value &&
+                //         !utils::Archivable<elementType, Archive_T>,
+                //     "Must not have trivial types or archivable types because the
+                //     " "archive_t must overload std::vector with any trivial
+                //     types.");
+                static_assert(Reflectable<elementType, Archive_T>, "Must have a Reflectable type.");
+
+                std::vector<elementType>& vec{ *_t };
 
                 // Recursive serialization
                 std::vector<Archive_T> k{};
 
                 for (auto it{ vec.cbegin() }; it != vec.cend(); it++)
                     {
-                        const elementType* const data{ &(*it) };
-
-                        const CWrap e("element", data);
-
-                        Archive_T j{};
+                        auto* const                         data{ &(*it) };
+                        const CWrap<elementType, Archive_T> e("element", const_cast<elementType* const>(data));
+                        Archive_T                           j{};
                         e.Serialize(j);
                         k.push_back(j);
                     }
@@ -213,7 +228,7 @@ struct CWrap : public IWrap<Archive_T>
             }
         else
             {
-                static_assert(always_false_v<T>, "Unsupported type");
+                static_assert(always_false<T>(), "Unsupported type");
             }
     };
 
@@ -239,7 +254,7 @@ struct CWrap : public IWrap<Archive_T>
                         e->Deserialize(inner);
                     }
             }
-        else if constexpr (std::is_trivial<T>::value || utils::Archivable<T, Archive_T>)
+        else if constexpr ((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>)&&!utils::is_std_vector<T>::value)
             {
                 if (!archive.contains(_name))
                     throw std::runtime_error("Bad json.");
@@ -250,28 +265,35 @@ struct CWrap : public IWrap<Archive_T>
         else if constexpr (utils::is_std_vector<T>::value)
             {
                 using elementType = typename T::value_type;
-                static_assert((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>));
+
+                // static_assert(
+                //     !std::is_trivial<elementType>::value &&
+                //         !utils::Archivable<elementType, Archive_T>,
+                //     "Must not have trivial types or archivable types because the
+                //     " "archive_t must overload std::vector with any trivial
+                //     types.");
+                static_assert(Reflectable<elementType, Archive_T>, "Must have a Reflectable type.");
 
                 std::vector<elementType>& vec{ *_t };
 
                 if (!archive.contains(_name))
                     throw std::runtime_error("Bad json.");
 
-                // Recursive serialization
+                // Recursive deserialization
                 std::vector<Archive_T> k{};
                 archive.get(_name, k);
                 vec.resize(k.size());
 
                 for (auto it{ k.cbegin() }; it != k.cend(); it++)
                     {
-                        elementType* const data{ &(vec.at(std::distance(k.cbegin(), it))) };
-                        CWrap              e("element", data);
-                        data = e.Deserialize(*it);
+                        elementType* const            data{ &(vec.at(std::distance(k.cbegin(), it))) };
+                        CWrap<elementType, Archive_T> e("element", data);
+                        e.Deserialize(*it);
                     }
             }
         else
             {
-                static_assert(always_false_v<T>, "Unsupported type");
+                static_assert(always_false<T>(), "Unsupported type");
             }
 
         if constexpr (HasPostLoad<T>)
