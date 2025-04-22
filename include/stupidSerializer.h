@@ -339,6 +339,50 @@ struct CWrapPolymorphic : public CWrap<T, Archive_T>
 };
 
 /**
+ * /brief Templated type erasure wrapper for serialization.
+ * /tparam T The type to be serialized.
+ * /tparam Archive_T The archive used to serialize.
+ */
+template<typename T, typename Archive_T>
+struct CEnumWrap : public CWrap<T, Archive_T>
+{
+    using base = CWrap<T, Archive_T>;
+    const std::string _enumName;
+    CEnumWrap(std::string name, T* const t, std::string enumName) : CWrap<T, Archive_T>(name, t), _enumName(enumName) { assert(!_enumName.empty()); };
+
+    virtual void Serialize(std::reference_wrapper<Archive_T> j) const override
+    {
+        auto& archive{ j.get() };
+
+        Archive_T inner{};
+        inner.set("Value", *base::_t);
+        inner.set("EnumTypename", _enumName);
+        archive.set(base::_name, inner);
+    };
+
+    virtual void Deserialize(std::reference_wrapper<const Archive_T> j) override
+    {
+        const auto& archive{ j.get() };
+
+        if (!archive.contains(base::_name))
+            return;
+
+        const auto inner{ archive[base::_name] };
+        if (!inner.contains("EnumTypename"))
+            throw std::runtime_error("Serialized data is not an enum.");
+        std::string enumTypename{};
+        inner.get("EnumTypename", enumTypename);
+        if (enumTypename != _enumName)
+            throw std::runtime_error("Expected enum " + _enumName + " but got instead " + enumTypename);
+
+        if (!inner.contains("Value"))
+            throw std::runtime_error("Serialized data is missing the enum value.");
+
+        inner.get("Value", *base::_t);
+    }
+};
+
+/**
  * /brief Helper to wrap primitives or reflected classes.
  */
 namespace metaFrom
@@ -364,5 +408,14 @@ DerivedClass(std::string name, TBase* base, T* t)
     auto baseClass{ metaFrom::BaseClass<Archive_T>(base) };
     return metaptr<Archive_T>{ new CWrapPolymorphic<T, Archive_T>(name, baseClass, t) };
 }
-};
+
+template<typename Archive_T, typename T>
+inline static metaptr<Archive_T>
+Enum(std::string name, T* const t, std::string enumName)
+{
+    return metaptr<Archive_T>{ new CEnumWrap<T, Archive_T>(name, t, enumName) };
 }
+
+} // metaFrom
+
+} // Fox
