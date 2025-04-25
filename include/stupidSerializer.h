@@ -54,8 +54,8 @@ namespace Fox
 template<typename Archive_T>
 struct IWrap
 {
-    inline static constexpr std::string_view INHERIT_TOKEN[]                                        = { "%inherit_from%" };
-    virtual std::string                      Name() const                                           = 0;
+    inline static constexpr std::string_view INHERIT_TOKEN                                          = { "%inherit_from%" };
+    virtual std::string_view                 Name() const                                           = 0;
     virtual void                             Serialize(std::reference_wrapper<Archive_T> j) const   = 0;
     virtual void                             Deserialize(std::reference_wrapper<const Archive_T> j) = 0;
 };
@@ -99,7 +99,7 @@ concept HasPostLoad = requires(T& t)
  * /brief The archive class concept.
  */
 template<typename W>
-concept ArchiveConcept = requires(W w, const W cw, std::string key, int testValue, int outValue)
+concept ArchiveConcept = requires(W w, const W cw, std::string_view key, int testValue, int outValue)
 {
     // Check that contains exists and returns a bool.
     {
@@ -129,7 +129,7 @@ concept ArchiveConcept = requires(W w, const W cw, std::string key, int testValu
 };
 
 template<typename T, typename Wrapper>
-concept Archivable = requires(Wrapper w, const T& t, const std::string key, T temp, T outValue)
+concept Archivable = requires(Wrapper w, const T& t, const std::string_view key, T temp, T outValue)
 {
     {
         w.get(key, outValue)
@@ -173,10 +173,10 @@ struct CWrap : public IWrap<Archive_T>
     static_assert(std::is_same<T, typename std::decay<T>::type>::value, "Must not be reference, array, or function type");
     static_assert(!std::is_pointer<T>::value, "Must not be pointer");
 
-    const std::string _name;
+    const std::string_view _name;
     T* const          _t;
-    CWrap(std::string name, T* const t) : _name(name), _t(t) { assert(_t); };
-    std::string  Name() const override { return _name; }
+    CWrap(std::string_view name, T* const t) : _name(name), _t(t) { assert(_t); };
+    std::string_view Name() const override { return _name; }
     virtual void Serialize(std::reference_wrapper<Archive_T> j) const override
     {
         using namespace utils;
@@ -193,7 +193,7 @@ struct CWrap : public IWrap<Archive_T>
 
                 archive.set(_name, k);
             }
-        else if constexpr ((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>)&&!utils::is_std_vector<T>::value)
+        else if constexpr ((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>) && !utils::is_std_vector<T>::value)
             {
                 const auto& ref{ *_t };
                 archive.set(_name, ref);
@@ -265,6 +265,7 @@ struct CWrap : public IWrap<Archive_T>
         else if constexpr (utils::is_std_vector<T>::value)
             {
                 using elementType = typename T::value_type;
+                static_assert(!std::is_pointer<elementType>::value, "Must not be pointer");
 
                 // static_assert(
                 //     !std::is_trivial<elementType>::value &&
@@ -312,7 +313,7 @@ struct CWrapPolymorphic : public CWrap<T, Archive_T>
 {
     metaptr<Archive_T> _b;
 
-    CWrapPolymorphic(std::string name, metaptr<Archive_T> base, T* const t) : CWrap<T, Archive_T>(name, t), _b(base){};
+    CWrapPolymorphic(std::string_view name, metaptr<Archive_T> base, T* const t) : CWrap<T, Archive_T>(name, t), _b(base){};
     void Serialize(std::reference_wrapper<Archive_T> j) const override
     {
         auto& archive{ j.get() };
@@ -347,8 +348,8 @@ template<typename T, typename Archive_T>
 struct CEnumWrap : public CWrap<T, Archive_T>
 {
     using base = CWrap<T, Archive_T>;
-    const std::string _enumName;
-    CEnumWrap(std::string name, T* const t, std::string enumName) : CWrap<T, Archive_T>(name, t), _enumName(enumName) { assert(!_enumName.empty()); };
+    const std::string_view _enumName;
+    CEnumWrap(std::string_view name, T* const t, std::string_view enumName) : CWrap<T, Archive_T>(name, t), _enumName(enumName) { assert(!_enumName.empty()); };
 
     virtual void Serialize(std::reference_wrapper<Archive_T> j) const override
     {
@@ -373,7 +374,7 @@ struct CEnumWrap : public CWrap<T, Archive_T>
         std::string enumTypename{};
         inner.get("EnumTypename", enumTypename);
         if (enumTypename != _enumName)
-            throw std::runtime_error("Expected enum " + _enumName + " but got instead " + enumTypename);
+            throw std::runtime_error("Expected enum " + std::string(_enumName) + " but got instead " + enumTypename);
 
         if (!inner.contains("Value"))
             throw std::runtime_error("Serialized data is missing the enum value.");
@@ -396,14 +397,14 @@ BaseClass(T* t)
 
 template<typename Archive_T, typename T>
 inline static metaptr<Archive_T>
-Value(std::string name, T* const t)
+Value(std::string_view name, T* const t)
 {
     return metaptr<Archive_T>{ new CWrap<T, Archive_T>(name, t) };
 }
 
 template<typename Archive_T, typename TBase, typename T>
 inline static metaptr<Archive_T>
-DerivedClass(std::string name, TBase* base, T* t)
+DerivedClass(std::string_view name, TBase* base, T* t)
 {
     auto baseClass{ metaFrom::BaseClass<Archive_T>(base) };
     return metaptr<Archive_T>{ new CWrapPolymorphic<T, Archive_T>(name, baseClass, t) };
@@ -411,7 +412,7 @@ DerivedClass(std::string name, TBase* base, T* t)
 
 template<typename Archive_T, typename T>
 inline static metaptr<Archive_T>
-Enum(std::string name, T* const t, std::string enumName)
+Enum(std::string_view name, T* const t, std::string_view enumName)
 {
     return metaptr<Archive_T>{ new CEnumWrap<T, Archive_T>(name, t, enumName) };
 }
