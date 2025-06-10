@@ -76,67 +76,43 @@ struct always_false : std::false_type
 /**
  * /brief Check that reflect() returns a list of reflectable elements.
  */
-template<typename T, typename Archive_T>
-concept Reflectable = requires(T& t, Archive_T archive)
-{
-    {
-        t.template reflect<Archive_T>(archive)
-        } -> std::same_as<meta_list<Archive_T>>;
+template<typename T, typename Archive_T, typename ReturnType_T = meta_list<Archive_T>>
+concept Reflectable = requires(T& t, Archive_T archive) {
+    { t.template reflect<Archive_T>(archive) } -> std::same_as<ReturnType_T>;
 };
 
 /**
  * /brief Checks if has post load method.
  */
 template<typename T>
-concept HasPostLoad = requires(T& t)
-{
-    {
-        t.postLoad()
-        } -> std::same_as<void>;
+concept HasPostLoad = requires(T& t) {
+    { t.postLoad() } -> std::same_as<void>;
 };
 
 /**
  * /brief The archive class concept.
  */
 template<typename W>
-concept ArchiveConcept = requires(W w, const W cw, std::string_view key, int testValue, int outValue)
-{
+concept ArchiveConcept = requires(W w, const W cw, std::string_view key, int testValue, int outValue) {
     // Check that contains exists and returns a bool.
-    {
-        w.contains(key)
-        } -> std::convertible_to<bool>;
-    {
-        cw.contains(key)
-        } -> std::convertible_to<bool>;
+    { w.contains(key) } -> std::convertible_to<bool>;
+    { cw.contains(key) } -> std::convertible_to<bool>;
 
     // Check that get works for an int.
-    {
-        w.get(key, outValue)
-        } -> std::convertible_to<bool>;
+    { w.get(key, outValue) } -> std::convertible_to<bool>;
 
     // Check that set works for an int.
-    {
-        w.set(key, testValue)
-        } -> std::same_as<void>;
+    { w.set(key, testValue) } -> std::same_as<void>;
 
     // Check that operator[] returns a new wrapper of the same type.
-    {
-        w[key]
-        } -> std::same_as<W>;
-    {
-        cw[key]
-        } -> std::same_as<W>;
+    { w[key] } -> std::same_as<W>;
+    { cw[key] } -> std::same_as<W>;
 };
 
 template<typename T, typename Wrapper>
-concept Archivable = requires(Wrapper w, const T& t, const std::string_view key, T temp, T outValue)
-{
-    {
-        w.get(key, outValue)
-        } -> std::convertible_to<bool>;
-    {
-        w.set(key, t)
-        } -> std::same_as<void>;
+concept Archivable = requires(Wrapper w, const T& t, const std::string_view key, T temp, T outValue) {
+    { w.get(key, outValue) } -> std::convertible_to<bool>;
+    { w.set(key, t) } -> std::same_as<void>;
 };
 
 template<typename T>
@@ -174,10 +150,10 @@ struct CWrap : public IWrap<Archive_T>
     static_assert(!std::is_pointer<T>::value, "Must not be pointer");
 
     const std::string_view _name;
-    T* const          _t;
+    T* const               _t;
     CWrap(std::string_view name, T* const t) : _name(name), _t(t) { assert(_t); };
     std::string_view Name() const override { return _name; }
-    virtual void Serialize(std::reference_wrapper<Archive_T> j) const override
+    virtual void     Serialize(std::reference_wrapper<Archive_T> j) const override
     {
         using namespace utils;
 
@@ -254,7 +230,7 @@ struct CWrap : public IWrap<Archive_T>
                         e->Deserialize(inner);
                     }
             }
-        else if constexpr ((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>)&&!utils::is_std_vector<T>::value)
+        else if constexpr ((std::is_trivial<T>::value || utils::Archivable<T, Archive_T>) && !utils::is_std_vector<T>::value)
             {
                 if (!archive.contains(_name))
                     throw std::runtime_error("Bad json.");
@@ -313,7 +289,7 @@ struct CWrapPolymorphic : public CWrap<T, Archive_T>
 {
     metaptr<Archive_T> _b;
 
-    CWrapPolymorphic(std::string_view name, metaptr<Archive_T> base, T* const t) : CWrap<T, Archive_T>(name, t), _b(base){};
+    CWrapPolymorphic(std::string_view name, metaptr<Archive_T> base, T* const t) : CWrap<T, Archive_T>(name, t), _b(base) {};
     void Serialize(std::reference_wrapper<Archive_T> j) const override
     {
         auto& archive{ j.get() };
@@ -386,37 +362,32 @@ struct CEnumWrap : public CWrap<T, Archive_T>
 /**
  * /brief Helper to wrap primitives or reflected classes.
  */
-namespace metaFrom
+struct metaFrom
 {
-template<typename Archive_T, typename T>
-inline static metaptr<Archive_T>
-BaseClass(T* t)
-{
-    return metaptr<Archive_T>{ new CWrap<T, Archive_T>(IWrap<Archive_T>::INHERIT_TOKEN, t) };
-}
+    template<typename Archive_T, typename T>
+    inline static metaptr<Archive_T> BaseClass(T* t)
+    {
+        return metaptr<Archive_T>{ new CWrap<T, Archive_T>(IWrap<Archive_T>::INHERIT_TOKEN, t) };
+    }
 
-template<typename Archive_T, typename T>
-inline static metaptr<Archive_T>
-Value(std::string_view name, T* const t)
-{
-    return metaptr<Archive_T>{ new CWrap<T, Archive_T>(name, t) };
-}
+    template<typename Archive_T, typename T>
+    inline static metaptr<Archive_T> Value(std::string_view name, T* const t)
+    {
+        return metaptr<Archive_T>{ new CWrap<T, Archive_T>(name, t) };
+    }
 
-template<typename Archive_T, typename TBase, typename T>
-inline static metaptr<Archive_T>
-DerivedClass(std::string_view name, TBase* base, T* t)
-{
-    auto baseClass{ metaFrom::BaseClass<Archive_T>(base) };
-    return metaptr<Archive_T>{ new CWrapPolymorphic<T, Archive_T>(name, baseClass, t) };
-}
+    template<typename Archive_T, typename TBase, typename T>
+    inline static metaptr<Archive_T> DerivedClass(std::string_view name, TBase* base, T* t)
+    {
+        auto baseClass{ metaFrom::BaseClass<Archive_T>(base) };
+        return metaptr<Archive_T>{ new CWrapPolymorphic<T, Archive_T>(name, baseClass, t) };
+    }
 
-template<typename Archive_T, typename T>
-inline static metaptr<Archive_T>
-Enum(std::string_view name, T* const t, std::string_view enumName)
-{
-    return metaptr<Archive_T>{ new CEnumWrap<T, Archive_T>(name, t, enumName) };
-}
-
-} // metaFrom
+    template<typename Archive_T, typename T>
+    inline static metaptr<Archive_T> Enum(std::string_view name, T* const t, std::string_view enumName)
+    {
+        return metaptr<Archive_T>{ new CEnumWrap<T, Archive_T>(name, t, enumName) };
+    }
+};
 
 } // Fox
